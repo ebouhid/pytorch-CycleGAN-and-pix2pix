@@ -155,6 +155,8 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
         net = UnetGenerator(input_nc, output_nc, 7, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
     elif netG == 'unet_256':
         net = UnetGenerator(input_nc, output_nc, 8, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
+    elif netG == 'haralick':
+        net = HaralickGenerator()
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % netG)
     return init_net(net, init_type, init_gain, gpu_ids)
@@ -199,6 +201,9 @@ def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', init_type='normal'
         net = NLayerDiscriminator(input_nc, ndf, n_layers_D, norm_layer=norm_layer)
     elif netD == 'pixel':     # classify if each pixel is real or fake
         net = PixelDiscriminator(input_nc, ndf, norm_layer=norm_layer)
+    elif netD == 'haralick':
+        # net = HaralickDiscriminator()
+        net = HaralickClassifierDiscriminator()
     else:
         raise NotImplementedError('Discriminator model name [%s] is not recognized' % netD)
     return init_net(net, init_type, init_gain, gpu_ids)
@@ -311,6 +316,34 @@ def cal_gradient_penalty(netD, real_data, fake_data, device, type='mixed', const
         return gradient_penalty, gradients
     else:
         return 0.0, None
+
+
+class HaralickGenerator(nn.Module):
+    def __init__(self, input_shape=(3, 4, 13), output_shape=(3, 4, 13)):
+        super(HaralickGenerator, self).__init__()
+        self.input_shape = input_shape
+        self.output_shape = output_shape
+        
+        # Define the convolutional layers
+        self.conv1 = nn.Conv2d(in_channels=input_shape[2], out_channels=64, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
+        self.conv3 = nn.Conv2d(in_channels=128, out_channels=64, kernel_size=3, padding=1)
+        self.conv4 = nn.Conv2d(in_channels=64, out_channels=output_shape[2], kernel_size=3, padding=1)
+        
+        self.relu = nn.ReLU()
+        self.tanh = nn.Tanh()
+        self.flatten = nn.Flatten()
+
+    def forward(self, x):
+        # Reshape input to (batch_size, 13, 3, 4) to use with Conv2d
+        x = x.permute(0, 3, 1, 2)
+        x = self.relu(self.conv1(x))
+        x = self.relu(self.conv2(x))
+        x = self.relu(self.conv3(x))
+        x = self.tanh(self.conv4(x))
+        # Reshape back to (batch_size, 3, 4, 13)
+        x = x.permute(0, 2, 3, 1)
+        return x
 
 
 class ResnetGenerator(nn.Module):
@@ -535,6 +568,46 @@ class UnetSkipConnectionBlock(nn.Module):
         else:   # add skip connections
             return torch.cat([x, self.model(x)], 1)
 
+class HaralickDiscriminator(nn.Module):
+    def __init__(self, input_shape=(3, 4, 13)):
+        super(HaralickDiscriminator, self).__init__()
+        self.input_shape = input_shape
+        self.fc1 = nn.Linear(input_shape[0] * input_shape[1] * input_shape[2], 256)
+        self.fc2 = nn.Linear(256, 128)
+        self.fc3 = nn.Linear(128, 1)
+        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = x.view(-1, self.input_shape[0] * self.input_shape[1] * self.input_shape[2])  # Flatten input
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.sigmoid(self.fc3(x))
+        return x
+
+class HaralickClassifierDiscriminator(nn.Module):
+    def __init__(self, input_shape=(3, 4, 13)):
+        super(HaralickClassifierDiscriminator, self).__init__()
+        self.input_shape = input_shape
+        self.fc1 = nn.Linear(input_shape[0] * input_shape[1] * input_shape[2], 256)
+        self.fc2 = nn.Linear(256, 128)
+        self.fc3 = nn.Linear(128, 64)
+        self.fc4 = nn.Linear(64, 128)
+        self.fc5 = nn.Linear(128, 156)
+        self.fc6 = nn.Linear(156, 1)
+        self.relu = nn.ReLU()
+        # self.softmax = nn.Softmax(dim=1)
+
+    def forward(self, x):
+        x = x.view(-1, self.input_shape[0] * self.input_shape[1] * self.input_shape[2])  # Flatten input
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.relu(self.fc3(x))
+        x = self.relu(self.fc4(x))
+        x = self.relu(self.fc5(x))
+        x = self.fc6(x)
+        # x = self.softmax(x)  # Apply softmax to get class probabilities
+        return x
 
 class NLayerDiscriminator(nn.Module):
     """Defines a PatchGAN discriminator"""

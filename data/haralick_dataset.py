@@ -85,17 +85,14 @@ class HaralickDataset(BaseDataset):
         data_A = np.load(path_A).astype(np.float32)
         data_B = np.load(path_B).astype(np.float32)
 
-        # print(f'A shape: {data_A.shape}')
-        # print(f'B shape: {data_B.shape}')
+        # Classification - define the label
+        label = 0. # forest
+        if 'non_forest' in path:
+            label = 1.
+        elif 'not_analyzed' in path:
+            label = 1.
 
-        # Pad the haralick features to 208x208 (actually it is going to (3, 212, 220) WHY???)
-        data_A = np.pad(data_A, ((0, 0), (0, 211 - data_A.shape[0]), (0, 211 - data_A.shape[1])), 'reflect')
-        data_B = np.pad(data_B, ((0, 0), (0, 211 - data_B.shape[0]), (0, 211 - data_B.shape[1])), 'reflect')
-
-        # print(f'A shape: {data_A.shape}')
-        # print(f'B shape: {data_B.shape}')
-
-        return {'A': data_A, 'B': data_B, 'A_paths': path_A, 'B_paths': path_B}
+        return {'A': data_A, 'B': data_B, 'A_paths': path_A, 'B_paths': path_B, 'label': label}
 
     def __len__(self):
         """Return the total number of images."""
